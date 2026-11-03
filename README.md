@@ -1,3 +1,7 @@
+### DISCLAIMER
+This app was made entirely with AI, specifically DeepSeek 4.1 Flash. The purpose of this was for me to learn more about how AI agents work, how to use them, etc... 
+So, keep that it mind, as it may have certain unwanted "features" of AI. This also means I may not update it that often. 
+
 # Home Hub
 
 A local desktop start page: a live clock, current weather and hourly forecast, five
