@@ -1,0 +1,25 @@
+{
+  "location": {
+    "mode": "auto",
+    "city": "",
+    "latitude": null,
+    "longitude": null,
+    "label": ""
+  },
+  "units": "metric",
+  "topics": [
+    "Technology",
+    "Science",
+    "Business",
+    "Sports",
+    "Health"
+  ],
+  "pinned": [
+    "spotify",
+    "opencode",
+    "ollama",
+    "hermes",
+    "vscode",
+    "github"
+  ]
+}

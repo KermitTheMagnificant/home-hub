@@ -1,0 +1,163 @@
+{
+  "news": {
+    "Sports": {
+      "topic": "Sports",
+      "title": "'Our girls matter': Maine group resubmits petition to put transgender sports ban on ballot",
+      "link": "https://news.google.com/rss/articles/CBMi8AFBVV95cUxPNnF6M3lRcEIyZVVKUUhwbmpaYmlNNWJza0tXaHVaQlE2bF9jU0VxSmhQMFhfNWQ1UXJhRXkzN2psLU9IVnd4Z2diaGREVU1UXzlaUjUwYUxhdGpQcEN5c3RjMm1CMEI4V0FCRzF4S0laUWwzNVJ4eE5xazl6MXFNVWpTSnh5Z0NwZE91WHVNdlhzMzQ4WE9oSVUzRzE4U3lpcVEzd01vd3hzaE5uTGtrbEtvTFdDSUJqMEFVRU81NFBkc0hzU1kzOGdfN0UyQ3dQOHNqRlRnV2JuaGtUd1Bpc0ctWjRUZzFURTBJazdqWko?oc=5",
+      "source": "fox23maine.com",
+      "published": "2026-11-03T01:53:17+00:00"
+    },
+    "Technology": {
+      "topic": "Technology",
+      "title": "What Tactile Systems Technology (TCMD) Said on Its Q3 Earnings Call",
+      "link": "https://news.google.com/rss/articles/CBMingFBVV95cUxOVEdfc3VOWjZaTGZsQk1hYlRxT084cHVEdTE5dHR3QU02djJONGxNWHZfekZIQzE3MmRxSV9WN3o0Yko1QXczRmxxVlVFNEdXSjVkMjNYaXNrVGIwdG51eWNVU0tTeUNwZUJKYVV6aVR0WkxUbkE4LVVWTGJ4a3dxZzBTNks4UWJ6YjFxNVJoMEczX2NvWWRRc1lWZmJfZw?oc=5",
+      "source": "Yahoo Finance",
+      "published": "2026-11-03T01:52:04+00:00"
+    },
+    "Health": {
+      "topic": "Health",
+      "title": "Jefferson Heath will leave Horizon Blue Cross Blue Shield of New Jersey\u2019s network on March 1 without a new contract",
+      "link": "https://news.google.com/rss/articles/CBMinwFBVV95cUxOYjR1eERYakRTOWJ4aDRvOHZoam9fa3lNNG81VUplMkp6aHdMc0VmYk5DRTlBdEpRMENieENuSHN1RzA4Yk5wOENDUkF3dkRGNjcyT2h2SERHMGVORGctSGlEWWQtMUNKa1Yza04wNVZXU3NSamZzTnBCamh0end5aW4zV183aC05S2VBdmd5T29oOG5ScXpvRGxEbUN2Zk0?oc=5",
+      "source": "Inquirer.com",
+      "published": "2026-11-03T01:07:41+00:00"
+    },
+    "Business": {
+      "topic": "Business",
+      "title": "Adam Robinson went from Wall Street to Austin's tech scene before a tragic Learjet crash",
+      "link": "https://news.google.com/rss/articles/CBMilAFBVV95cUxORHl2MXo0cFY2MTNJUDhTc184RDlUMXR3YmtaVmIxeVF2VWxDLU03NXVJOHhfTTVQbUVzZy04VG84Qk1mWXVzX1BNUXJxTW4zalZrSFZJWlNFaUhNQkloQ1hKcWk5VGpsVkJnTkhkUWU4ZUhJZ2tlU2xiQXZiNGNBYnBzUEN5cXlBUGZhNzBXQVV6OXJI?oc=5",
+      "source": "Business Insider",
+      "published": "2026-11-03T01:55:00+00:00"
+    },
+    "Science": {
+      "topic": "Science",
+      "title": "Beyond Color: The Science of Light in Commercial Floors",
+      "link": "https://news.google.com/rss/articles/CBMizwJBVV95cUxNNVdSRDFWbUhOdUx6MldobzJtemJzNkpxbUhHQXNqMERYWVdvZUdUM0dYd0FaSzhaczgtVjB0RmRXNDBKdWZRM044c29WZ21tdTBjWXpnaG8tbXlPTWEweW9KZ1BHYTlJU1N6bnRwTDNQdnJ5Q2l2YlNnVG5fWnItTS1lMS05UE05OF9YMVNNQzNuYjk3Nm9GZkJJM3JRcy1xWk5HOFFmMmNsUERVMEUzWEdqSDZpSzJWT3BMS0JUb1laV0tkeVl3Ny15QUt4ZHhISFNUUEk4RUZ1M1ZYYkFmNVNVbGNnMjRwMWhYMHBiNnZKdWx3Rlg2cTNYaDNMSGNMSUo1N1VMY2lwYmVlZ243TTVlUzN4Q3NOVzAwWEJSOVdnSVhiZnBFWlU0N21pa2o3UDhHRHJKMnR1ZFRDbGs4dmlfbmEwcGFiMGQyT1hQTQ?oc=5",
+      "source": "Metropolis Magazine",
+      "published": "2026-11-03T01:46:08+00:00"
+    }
+  },
+  "saved_at": "2026-11-03T02:03:44.452260+00:00",
+  "weather": {
+    "city": "Cleveland, US",
+    "location": {
+      "latitude": 41.499227,
+      "longitude": -81.695855,
+      "label": "Cleveland, US"
+    },
+    "temperature": 15,
+    "feels": 13,
+    "humidity": 81,
+    "wind": 12,
+    "code": 3,
+    "description": "Overcast",
+    "glyph": "\u2601",
+    "color": "#bac2de",
+    "is_day": false,
+    "high": 21,
+    "low": 12,
+    "unit": "\u00b0C",
+    "wind_unit": "km/h",
+    "sunrise": "06:59",
+    "sunset": "17:20",
+    "hourly": [
+      {
+        "time": "21:00",
+        "temp": 15,
+        "precip": 4
+      },
+      {
+        "time": "22:00",
+        "temp": 15,
+        "precip": 2
+      },
+      {
+        "time": "23:00",
+        "temp": 15,
+        "precip": 3
+      },
+      {
+        "time": "00:00",
+        "temp": 15,
+        "precip": 3
+      },
+      {
+        "time": "01:00",
+        "temp": 15,
+        "precip": 8
+      },
+      {
+        "time": "02:00",
+        "temp": 15,
+        "precip": 8
+      },
+      {
+        "time": "03:00",
+        "temp": 15,
+        "precip": 15
+      },
+      {
+        "time": "04:00",
+        "temp": 15,
+        "precip": 6
+      },
+      {
+        "time": "05:00",
+        "temp": 15,
+        "precip": 6
+      },
+      {
+        "time": "06:00",
+        "temp": 15,
+        "precip": 4
+      },
+      {
+        "time": "07:00",
+        "temp": 15,
+        "precip": 4
+      },
+      {
+        "time": "08:00",
+        "temp": 15,
+        "precip": 4
+      }
+    ],
+    "daily": [
+      {
+        "label": "Mon",
+        "glyph": "\u2602",
+        "high": 21,
+        "low": 12
+      },
+      {
+        "label": "Tue",
+        "glyph": "\u2602",
+        "high": 23,
+        "low": 15
+      },
+      {
+        "label": "Wed",
+        "glyph": "\u2602",
+        "high": 21,
+        "low": 15
+      },
+      {
+        "label": "Thu",
+        "glyph": "\u2602",
+        "high": 19,
+        "low": 14
+      },
+      {
+        "label": "Fri",
+        "glyph": "\u2602",
+        "high": 14,
+        "low": 8
+      }
+    ],
+    "updated": "2026-11-03T02:03:44.229574+00:00"
+  },
+  "location": {
+    "latitude": 41.499227,
+    "longitude": -81.695855,
+    "label": "Cleveland, US"
+  }
+}
