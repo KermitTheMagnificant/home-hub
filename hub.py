@@ -6,7 +6,8 @@
 
 The dashboard uses only Python's standard library plus `requests` and (optionally)
 `Pillow` for launcher icons.  Weather data comes from Open-Meteo, headlines from
-Google News RSS.
+Google News RSS.  Topics, themes, weather widgets, recent folders and application
+shortcuts are all customisable from the settings window.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import json
 import os
 import queue
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -43,6 +45,7 @@ except ImportError:  # pragma: no cover - monogram icons are used instead
     ImageTk = None  # type: ignore[assignment]
 
 import tkinter as tk
+from tkinter import filedialog
 from tkinter import font as tkfont
 from tkinter import messagebox
 
@@ -53,39 +56,104 @@ CACHE_PATH = APP_DIR / "cache.json"
 USER_AGENT = "home-hub/1.0 (personal desktop dashboard)"
 NEWS_WINDOW_HOURS = 24
 
-# Catppuccin Mocha
-BASE = "#1e1e2e"
-MANTLE = "#181825"
-CRUST = "#11111b"
-SURFACE0 = "#313244"
-SURFACE1 = "#45475a"
-SURFACE2 = "#585b70"
-OVERLAY0 = "#6c7086"
-OVERLAY1 = "#7f849c"
-SUBTEXT0 = "#a6adc8"
-SUBTEXT1 = "#bac2de"
-TEXT = "#cdd6f4"
-BLUE = "#89b4fa"
-LAVENDER = "#b4befe"
-MAUVE = "#cba6f7"
-PINK = "#f5c2e7"
-RED = "#f38ba8"
-PEACH = "#fab387"
-YELLOW = "#f9e2af"
-GREEN = "#a6e3a1"
-TEAL = "#94e2d5"
-SKY = "#89dceb"
+# ---------------------------------------------------------------------------
+# Themes
+# ---------------------------------------------------------------------------
 
-TOPIC_COLORS = [BLUE, GREEN, PEACH, PINK, TEAL]
+THEMES: dict[str, dict[str, str]] = {
+    "mocha": {
+        "BASE": "#1e1e2e", "MANTLE": "#181825", "CRUST": "#11111b",
+        "SURFACE0": "#313244", "SURFACE1": "#45475a", "SURFACE2": "#585b70",
+        "OVERLAY0": "#6c7086", "OVERLAY1": "#7f849c", "SUBTEXT0": "#a6adc8",
+        "SUBTEXT1": "#bac2de", "TEXT": "#cdd6f4", "BLUE": "#89b4fa",
+        "LAVENDER": "#b4befe", "MAUVE": "#cba6f7", "PINK": "#f5c2e7",
+        "RED": "#f38ba8", "PEACH": "#fab387", "YELLOW": "#f9e2af",
+        "GREEN": "#a6e3a1", "TEAL": "#94e2d5", "SKY": "#89dceb",
+    },
+    "macchiato": {
+        "BASE": "#24273a", "MANTLE": "#1e2030", "CRUST": "#181926",
+        "SURFACE0": "#363a4f", "SURFACE1": "#494d64", "SURFACE2": "#5b6078",
+        "OVERLAY0": "#6e738d", "OVERLAY1": "#8087a2", "SUBTEXT0": "#a5adcb",
+        "SUBTEXT1": "#b8c0e0", "TEXT": "#cad3f5", "BLUE": "#8aadf4",
+        "LAVENDER": "#b7bdf8", "MAUVE": "#c6a0f6", "PINK": "#f5bde6",
+        "RED": "#ed8796", "PEACH": "#f5a97f", "YELLOW": "#eed49f",
+        "GREEN": "#a6da95", "TEAL": "#8bd5ca", "SKY": "#91d7e3",
+    },
+    "frappe": {
+        "BASE": "#303446", "MANTLE": "#292c3c", "CRUST": "#232634",
+        "SURFACE0": "#414559", "SURFACE1": "#51576d", "SURFACE2": "#626880",
+        "OVERLAY0": "#737994", "OVERLAY1": "#838ba7", "SUBTEXT0": "#a5adce",
+        "SUBTEXT1": "#b5bfe2", "TEXT": "#c6d0f5", "BLUE": "#8caaee",
+        "LAVENDER": "#babbf1", "MAUVE": "#ca9ee6", "PINK": "#f4b8e4",
+        "RED": "#e78284", "PEACH": "#ef9f76", "YELLOW": "#e5c890",
+        "GREEN": "#a6d189", "TEAL": "#81c8be", "SKY": "#99d1db",
+    },
+    "latte": {
+        "BASE": "#eff1f5", "MANTLE": "#e6e9ef", "CRUST": "#dce0e8",
+        "SURFACE0": "#ccd0da", "SURFACE1": "#bcc0cc", "SURFACE2": "#acb0be",
+        "OVERLAY0": "#9ca0b0", "OVERLAY1": "#8c8fa1", "SUBTEXT0": "#6c6f85",
+        "SUBTEXT1": "#5c5f77", "TEXT": "#4c4f69", "BLUE": "#1e66f5",
+        "LAVENDER": "#7287fd", "MAUVE": "#8839ef", "PINK": "#ea76cb",
+        "RED": "#d20f39", "PEACH": "#fe640b", "YELLOW": "#df8e1d",
+        "GREEN": "#40a02b", "TEAL": "#179299", "SKY": "#04a5e5",
+    },
+    "nord": {
+        "BASE": "#2e3440", "MANTLE": "#292e39", "CRUST": "#242933",
+        "SURFACE0": "#3b4252", "SURFACE1": "#434c5e", "SURFACE2": "#4c566a",
+        "OVERLAY0": "#616e88", "OVERLAY1": "#7b88a1", "SUBTEXT0": "#a3abbd",
+        "SUBTEXT1": "#b8c0d0", "TEXT": "#eceff4", "BLUE": "#88c0d0",
+        "LAVENDER": "#b48ead", "MAUVE": "#b48ead", "PINK": "#d08770",
+        "RED": "#bf616a", "PEACH": "#d08770", "YELLOW": "#ebcb8b",
+        "GREEN": "#a3be8c", "TEAL": "#8fbcbb", "SKY": "#88c0d0",
+    },
+}
+
+THEME_LABELS = {
+    "mocha": "Catppuccin Mocha",
+    "macchiato": "Catppuccin Macchiato",
+    "frappe": "Catppuccin Frappe",
+    "latte": "Catppuccin Latte",
+    "nord": "Nord",
+}
+
+THEME = "mocha"
+TOPIC_COLORS: list[str] = []
+
+
+def apply_theme(name: str) -> str:
+    """Load a palette into the module-level colour globals."""
+    global THEME, TOPIC_COLORS
+    if name not in THEMES:
+        name = "mocha"
+    palette = THEMES[name]
+    globals().update(palette)
+    THEME = name
+    TOPIC_COLORS = [
+        palette["BLUE"], palette["GREEN"], palette["PEACH"], palette["PINK"],
+        palette["TEAL"], palette["MAUVE"], palette["YELLOW"], palette["SKY"],
+    ]
+    return name
+
+
+apply_theme("mocha")
+
+
+def resolve_color(value: Any) -> str:
+    """Resolve theme colour names (e.g. 'BLUE') to the active palette."""
+    if isinstance(value, str) and value in THEMES.get(THEME, {}):
+        return str(globals().get(value, value))
+    return str(value or TEXT)
+
 
 DEFAULT_TOPICS = ["Technology", "Science", "Business", "Sports", "Health"]
+MAX_TOPICS = 8
 
 APPS: dict[str, dict[str, Any]] = {
     "spotify": {
         "name": "Spotify",
         "icon": "com.spotify.Client",
         "monogram": "S",
-        "color": GREEN,
+        "color": "GREEN",
         "launch": ["flatpak", "run", "com.spotify.Client"],
         "desktop": "com.spotify.Client.desktop",
     },
@@ -93,7 +161,7 @@ APPS: dict[str, dict[str, Any]] = {
         "name": "OpenCode",
         "icon": None,
         "monogram": "OC",
-        "color": BLUE,
+        "color": "BLUE",
         "launch": ["opencode"],
         "terminal": True,
     },
@@ -101,7 +169,7 @@ APPS: dict[str, dict[str, Any]] = {
         "name": "Ollama",
         "icon": None,
         "monogram": "OL",
-        "color": MAUVE,
+        "color": "MAUVE",
         "launch": ["ollama", "list"],
         "terminal": True,
         "hold": True,
@@ -110,7 +178,7 @@ APPS: dict[str, dict[str, Any]] = {
         "name": "Hermes",
         "icon": "hermes",
         "monogram": "H",
-        "color": PEACH,
+        "color": "PEACH",
         "launch": [str(Path.home() / ".local" / "bin" / "hermes"), "desktop", "--skip-build"],
         "desktop": "com.nousresearch.hermes.desktop",
     },
@@ -118,7 +186,7 @@ APPS: dict[str, dict[str, Any]] = {
         "name": "VS Code",
         "icon": "com.visualstudio.code",
         "monogram": "VS",
-        "color": SKY,
+        "color": "SKY",
         "launch": ["flatpak", "run", "com.visualstudio.code"],
         "desktop": "com.visualstudio.code.desktop",
     },
@@ -126,7 +194,7 @@ APPS: dict[str, dict[str, Any]] = {
         "name": "GitHub",
         "icon": None,
         "monogram": "GH",
-        "color": TEXT,
+        "color": "TEXT",
         "launch": ["xdg-open", "https://github.com"],
     },
 }
@@ -140,39 +208,51 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "label": "",
     },
     "units": "metric",
+    "theme": "mocha",
     "topics": list(DEFAULT_TOPICS),
     "pinned": list(APPS.keys()),
+    "custom_apps": [],
+    "weather": {
+        "forecast_days": 5,
+        "show_hourly": True,
+        "show_forecast": True,
+        "show_sun": True,
+        "show_details": True,
+        "refresh_minutes": 15,
+    },
 }
 
-WEATHER_CODES: dict[int, tuple[str, str, str]] = {
-    0: ("Clear sky", "\u2600", YELLOW),
-    1: ("Mainly clear", "\u2600", YELLOW),
-    2: ("Partly cloudy", "\u26c5", SUBTEXT1),
-    3: ("Overcast", "\u2601", SUBTEXT1),
-    45: ("Fog", "\u2261", OVERLAY1),
-    48: ("Rime fog", "\u2261", OVERLAY1),
-    51: ("Light drizzle", "\u2602", BLUE),
-    53: ("Drizzle", "\u2602", BLUE),
-    55: ("Heavy drizzle", "\u2602", BLUE),
-    56: ("Freezing drizzle", "\u2602", TEAL),
-    57: ("Freezing drizzle", "\u2602", TEAL),
-    61: ("Light rain", "\u2602", BLUE),
-    63: ("Rain", "\u2602", BLUE),
-    65: ("Heavy rain", "\u2602", BLUE),
-    66: ("Freezing rain", "\u2602", TEAL),
-    67: ("Freezing rain", "\u2602", TEAL),
-    71: ("Light snow", "\u2744", TEAL),
-    73: ("Snow", "\u2744", TEAL),
-    75: ("Heavy snow", "\u2744", TEAL),
-    77: ("Snow grains", "\u2744", TEAL),
-    80: ("Rain showers", "\u2602", BLUE),
-    81: ("Rain showers", "\u2602", BLUE),
-    82: ("Violent showers", "\u2602", BLUE),
-    85: ("Snow showers", "\u2744", TEAL),
-    86: ("Snow showers", "\u2744", TEAL),
-    95: ("Thunderstorm", "\u26a1", MAUVE),
-    96: ("Thunderstorm", "\u26a1", MAUVE),
-    99: ("Thunderstorm", "\u26a1", MAUVE),
+# Third item is the name of a theme colour, resolved at render time so that
+# weather glyphs follow the active theme.
+WEATHER_CODE_STYLES: dict[int, tuple[str, str, str]] = {
+    0: ("Clear sky", "\u2600", "YELLOW"),
+    1: ("Mainly clear", "\u2600", "YELLOW"),
+    2: ("Partly cloudy", "\u26c5", "SUBTEXT1"),
+    3: ("Overcast", "\u2601", "SUBTEXT1"),
+    45: ("Fog", "\u2261", "OVERLAY1"),
+    48: ("Rime fog", "\u2261", "OVERLAY1"),
+    51: ("Light drizzle", "\u2602", "BLUE"),
+    53: ("Drizzle", "\u2602", "BLUE"),
+    55: ("Heavy drizzle", "\u2602", "BLUE"),
+    56: ("Freezing drizzle", "\u2602", "TEAL"),
+    57: ("Freezing drizzle", "\u2602", "TEAL"),
+    61: ("Light rain", "\u2602", "BLUE"),
+    63: ("Rain", "\u2602", "BLUE"),
+    65: ("Heavy rain", "\u2602", "BLUE"),
+    66: ("Freezing rain", "\u2602", "TEAL"),
+    67: ("Freezing rain", "\u2602", "TEAL"),
+    71: ("Light snow", "\u2744", "TEAL"),
+    73: ("Snow", "\u2744", "TEAL"),
+    75: ("Heavy snow", "\u2744", "TEAL"),
+    77: ("Snow grains", "\u2744", "TEAL"),
+    80: ("Rain showers", "\u2602", "BLUE"),
+    81: ("Rain showers", "\u2602", "BLUE"),
+    82: ("Violent showers", "\u2602", "BLUE"),
+    85: ("Snow showers", "\u2744", "TEAL"),
+    86: ("Snow showers", "\u2744", "TEAL"),
+    95: ("Thunderstorm", "\u26a1", "MAUVE"),
+    96: ("Thunderstorm", "\u26a1", "MAUVE"),
+    99: ("Thunderstorm", "\u26a1", "MAUVE"),
 }
 
 UI_FONT = "DejaVu Sans"
@@ -202,29 +282,117 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     return merged
 
 
+def _clamp_int(value: Any, default: int, low: int, high: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, number))
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "app"
+
+
+def normalize_custom_apps(raw: Any) -> list[dict[str, Any]]:
+    """Validate user-supplied application shortcuts from config.json."""
+    apps: list[dict[str, Any]] = []
+    taken = set(APPS)
+    for item in raw or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        command = item.get("launch", item.get("command", []))
+        if isinstance(command, str):
+            try:
+                command = shlex.split(command)
+            except ValueError:
+                continue
+        if not isinstance(command, (list, tuple)):
+            continue
+        command = [str(part) for part in command if str(part).strip()]
+        if not name or not command:
+            continue
+
+        key = str(item.get("key") or item.get("id") or "").strip()
+        key = re.sub(r"[^A-Za-z0-9_.-]+", "-", key).strip("-") if key else ""
+        if not key:
+            key = f"custom-{_slugify(name)}"
+        if key in taken:
+            base = key
+            suffix = 2
+            while f"{base}-{suffix}" in taken:
+                suffix += 1
+            key = f"{base}-{suffix}"
+        taken.add(key)
+
+        apps.append(
+            {
+                "key": key,
+                "name": name,
+                "launch": command,
+                "icon": item.get("icon") or None,
+                "monogram": str(item.get("monogram") or name[:2].upper()),
+                "color": str(item.get("color") or "BLUE"),
+                "terminal": bool(item.get("terminal", False)),
+                "hold": bool(item.get("hold", False)),
+                "desktop": item.get("desktop") or None,
+                "custom": True,
+            }
+        )
+    return apps
+
+
+def build_app_registry(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    registry = {key: dict(app) for key, app in APPS.items()}
+    for app in cfg.get("custom_apps") or []:
+        key = app.get("key")
+        if isinstance(key, str) and key and key not in registry:
+            registry[key] = dict(app)
+    return registry
+
+
 def normalize_config(raw: dict[str, Any] | None) -> dict[str, Any]:
     cfg = _deep_merge(DEFAULT_CONFIG, raw or {})
 
     topics: list[str] = []
-    for topic in cfg.get("topics") or []:
+    raw_topics = cfg.get("topics")
+    if isinstance(raw_topics, str):
+        raw_topics = [raw_topics]
+    for topic in raw_topics or []:
         if isinstance(topic, str):
             topic = topic.strip()
             if topic and topic.lower() not in {t.lower() for t in topics}:
                 topics.append(topic)
-    for fallback in DEFAULT_TOPICS:
-        if len(topics) >= 5:
-            break
-        if fallback.lower() not in {t.lower() for t in topics}:
-            topics.append(fallback)
-    cfg["topics"] = topics[:5]
+    cfg["topics"] = (topics or list(DEFAULT_TOPICS))[:MAX_TOPICS]
 
-    pinned = [key for key in APPS if key in (cfg.get("pinned") or [])]
-    cfg["pinned"] = pinned
+    cfg["custom_apps"] = normalize_custom_apps(cfg.get("custom_apps"))
+    registry = build_app_registry(cfg)
+    cfg["pinned"] = [key for key in registry if key in (cfg.get("pinned") or [])]
 
     if cfg.get("units") not in {"metric", "imperial"}:
         cfg["units"] = "metric"
+    if cfg.get("theme") not in THEMES:
+        cfg["theme"] = "mocha"
 
-    loc = cfg.setdefault("location", {})
+    weather = cfg.get("weather")
+    if not isinstance(weather, dict):
+        weather = {}
+        cfg["weather"] = weather
+    weather["forecast_days"] = _clamp_int(
+        weather.get("forecast_days"), 5, 1, 7
+    )
+    weather["refresh_minutes"] = _clamp_int(
+        weather.get("refresh_minutes"), 15, 5, 120
+    )
+    for key in ("show_hourly", "show_forecast", "show_sun", "show_details"):
+        weather[key] = bool(weather.get(key, True))
+
+    loc = cfg.get("location")
+    if not isinstance(loc, dict):
+        loc = {}
+        cfg["location"] = loc
     if loc.get("mode") not in {"auto", "manual"}:
         loc["mode"] = "auto"
     for key in ("city", "label"):
@@ -271,6 +439,131 @@ def save_cache(cache: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Recently opened folders
+# ---------------------------------------------------------------------------
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _timestamp(value: Any) -> float:
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def parse_xbel_folders(xml_text: str) -> list[dict[str, Any]]:
+    """Return folder bookmarks from a GTK recently-used.xbel document."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+    folders: list[dict[str, Any]] = []
+    for node in root.iter():
+        if _local_name(node.tag) != "bookmark":
+            continue
+        href = node.get("href") or ""
+        if not href.startswith("file://"):
+            continue
+        path = Path(urllib.parse.unquote(urllib.parse.urlparse(href).path))
+        if not path.is_dir():
+            continue
+        when = (
+            node.get("visited") or node.get("modified") or node.get("added") or ""
+        )
+        name = "Home" if path == Path.home() else (path.name or str(path))
+        folders.append(
+            {
+                "path": str(path),
+                "name": name,
+                "timestamp": _timestamp(when),
+            }
+        )
+    return folders
+
+
+def recent_folders(cache: dict[str, Any], limit: int = 5) -> list[dict[str, str]]:
+    """Merge folders opened through Home Hub with desktop recent-folder history."""
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for entry in cache.get("recent_folders") or []:
+        if not isinstance(entry, dict):
+            continue
+        path = str(entry.get("path") or "")
+        if not path or path in seen or not Path(path).is_dir():
+            continue
+        seen.add(path)
+        home = str(Path.home())
+        candidates.append(
+            {
+                "path": path,
+                "name": "Home" if path == home else (Path(path).name or path),
+                "timestamp": _timestamp(entry.get("opened")),
+            }
+        )
+
+    xbel_files = [
+        Path.home() / ".local" / "share" / "recently-used.xbel",
+        Path.home() / ".recently-used.xbel",
+    ]
+    for xbel in xbel_files:
+        if not xbel.exists():
+            continue
+        try:
+            text = xbel.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for entry in parse_xbel_folders(text):
+            if entry["path"] in seen:
+                continue
+            seen.add(entry["path"])
+            candidates.append(entry)
+
+    candidates.sort(key=lambda item: item["timestamp"], reverse=True)
+    return [
+        {"path": item["path"], "name": item["name"]}
+        for item in candidates[:limit]
+    ]
+
+
+def record_recent_folder(
+    cache: dict[str, Any], path: str, limit: int = 20
+) -> None:
+    target = str(Path(path))
+    entries = [
+        entry
+        for entry in cache.get("recent_folders") or []
+        if isinstance(entry, dict) and entry.get("path") != target
+    ]
+    entries.insert(
+        0,
+        {
+            "path": target,
+            "opened": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    cache["recent_folders"] = entries[:limit]
+
+
+def forget_recent_folder(cache: dict[str, Any], path: str) -> None:
+    target = str(Path(path))
+    cache["recent_folders"] = [
+        entry
+        for entry in cache.get("recent_folders") or []
+        if isinstance(entry, dict) and entry.get("path") != target
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Time and text helpers
 # ---------------------------------------------------------------------------
 
@@ -308,11 +601,13 @@ def format_day(day: datetime) -> str:
 
 
 def validate_topics(topics: list[str]) -> str | None:
-    cleaned = [t.strip() for t in topics]
-    if any(not t for t in cleaned):
-        return "All five topic fields need a value."
+    cleaned = [t.strip() for t in topics if t.strip()]
+    if not cleaned:
+        return "Add at least one news topic."
+    if len(cleaned) > MAX_TOPICS:
+        return f"Use at most {MAX_TOPICS} news topics."
     if len({t.lower() for t in cleaned}) != len(cleaned):
-        return "Please choose five different topics."
+        return "Please choose different topics."
     return None
 
 
@@ -432,7 +727,10 @@ def fetch_news_article(topic: str, now: datetime | None = None) -> Article | Non
 
 
 def weather_info(code: int) -> tuple[str, str, str]:
-    return WEATHER_CODES.get(int(code), ("Unknown conditions", "\u2022", SUBTEXT1))
+    description, glyph, color_name = WEATHER_CODE_STYLES.get(
+        int(code), ("Unknown conditions", "\u2022", "SUBTEXT1")
+    )
+    return description, glyph, globals().get(color_name, SUBTEXT1)
 
 
 def geocode(city: str) -> dict[str, Any]:
@@ -522,6 +820,9 @@ def get_weather(
 ) -> dict[str, Any]:
     location = resolve_location(cfg, cached_location)
     imperial = cfg.get("units") == "imperial"
+    forecast_days = _clamp_int(
+        (cfg.get("weather") or {}).get("forecast_days"), 5, 1, 7
+    )
     params = {
         "latitude": location["latitude"],
         "longitude": location["longitude"],
@@ -534,7 +835,7 @@ def get_weather(
         ),
         "hourly": "temperature_2m,precipitation_probability",
         "timezone": "auto",
-        "forecast_days": 5,
+        "forecast_days": forecast_days,
         "temperature_unit": "fahrenheit" if imperial else "celsius",
         "wind_speed_unit": "mph" if imperial else "kmh",
     }
@@ -547,7 +848,7 @@ def get_weather(
 
     daily_items: list[dict[str, Any]] = []
     dates = daily.get("time") or []
-    for index, date_text in enumerate(dates[:5]):
+    for index, date_text in enumerate(dates[:forecast_days]):
         try:
             day = datetime.strptime(date_text, "%Y-%m-%d")
             daily_code = int(daily["weather_code"][index])
@@ -650,8 +951,12 @@ def find_executable(name: str) -> str | None:
     return None
 
 
-def build_launch_command(key: str) -> list[str]:
-    app = APPS[key]
+def build_launch_command(
+    key: str, apps: dict[str, dict[str, Any]] | None = None
+) -> list[str]:
+    app = (apps or APPS).get(key)
+    if not app:
+        return []
     command = list(app["launch"])
     executable = find_executable(command[0])
     if executable:
@@ -676,11 +981,15 @@ def build_launch_command(key: str) -> list[str]:
     return command
 
 
-def launch_app(key: str, parent: tk.Misc | None = None) -> None:
-    app = APPS.get(key)
+def launch_app(
+    key: str,
+    parent: tk.Misc | None = None,
+    apps: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    app = (apps or APPS).get(key)
     if not app:
         return
-    command = build_launch_command(key)
+    command = build_launch_command(key, apps)
     try:
         subprocess.Popen(
             command,
@@ -821,14 +1130,17 @@ class PillButton(tk.Label):
         master: tk.Misc,
         text: str,
         command: Any,
-        bg: str = SURFACE0,
-        hover: str = SURFACE1,
-        fg: str = TEXT,
+        bg: str | None = None,
+        hover: str | None = None,
+        fg: str | None = None,
         font: tuple[str, int, str] | None = None,
         padx: int = 16,
         pady: int = 8,
         **kwargs: Any,
     ) -> None:
+        bg = bg or SURFACE0
+        hover = hover or SURFACE1
+        fg = fg or TEXT
         super().__init__(
             master,
             text=text,
@@ -846,6 +1158,48 @@ class PillButton(tk.Label):
         self.bind("<Button-1>", lambda _event: self._command())
         self.bind("<Enter>", lambda _event: self.configure(bg=self._hover_bg))
         self.bind("<Leave>", lambda _event: self.configure(bg=self._normal_bg))
+
+
+class ScrollFrame(tk.Frame):
+    """A vertically scrollable frame used for long news and settings lists."""
+
+    def __init__(self, master: tk.Misc, bg: str = BASE, **kwargs: Any) -> None:
+        super().__init__(master, bg=bg, **kwargs)
+        self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0)
+        self.scrollbar = tk.Scrollbar(
+            self, orient="vertical", command=self.canvas.yview, width=8,
+            bg=SURFACE0, troughcolor=bg, activebackground=SURFACE1,
+            highlightthickness=0, bd=0, relief="flat",
+        )
+        self.body = tk.Frame(self.canvas, bg=bg)
+        self._window = self.canvas.create_window(
+            (0, 0), window=self.body, anchor="nw"
+        )
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        self.body.bind("<Configure>", self._sync, add="+")
+        self.canvas.bind("<Configure>", self._resize, add="+")
+
+    def _sync(self, _event: tk.Event | None = None) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _resize(self, event: tk.Event) -> None:
+        self.canvas.itemconfigure(self._window, width=event.width)
+
+    def _on_wheel(self, event: tk.Event) -> str:
+        if getattr(event, "num", None) == 4:
+            step = -1
+        elif getattr(event, "num", None) == 5:
+            step = 1
+        else:
+            step = -1 if getattr(event, "delta", 0) > 0 else 1
+        self.canvas.yview_scroll(step * 3, "units")
+        return "break"
+
+    def bind_wheel(self) -> None:
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            bind_tree(self, sequence, self._on_wheel)
 
 
 class NewsCard(Card):
@@ -958,6 +1312,7 @@ class AppTile(Card):
         app: dict[str, Any],
         icon: Any,
         on_unpin: Any,
+        apps: dict[str, dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -967,6 +1322,7 @@ class AppTile(Card):
         self.app = app
         self.icon = icon
         self._on_unpin = on_unpin
+        self.apps = apps or APPS
 
         holder = tk.Frame(self.body, bg=SURFACE0, width=40, height=40)
         holder.pack(pady=(2, 4))
@@ -976,7 +1332,7 @@ class AppTile(Card):
         else:
             label = tk.Label(
                 holder, text=app["monogram"], font=ui_font(15, "bold"),
-                fg=app["color"], bg=SURFACE0, bd=0,
+                fg=resolve_color(app.get("color")), bg=SURFACE0, bd=0,
             )
         label.place(relx=0.5, rely=0.5, anchor="center")
 
@@ -985,7 +1341,12 @@ class AppTile(Card):
         )
         name.pack()
 
-        bind_tree(self, "<Button-1>", lambda _event: launch_app(self.key, self.winfo_toplevel()))
+        bind_tree(
+            self, "<Button-1>",
+            lambda _event: launch_app(
+                self.key, self.winfo_toplevel(), self.apps
+            ),
+        )
         bind_tree(self, "<Button-3>", self._show_menu)
         bind_tree(self, "<Enter>", lambda _event: self.set_bg(SURFACE1))
         bind_tree(self, "<Leave>", lambda _event: self.set_bg(SURFACE0))
@@ -997,7 +1358,12 @@ class AppTile(Card):
             self, tearoff=0, bg=SURFACE0, fg=TEXT, bd=0,
             activebackground=SURFACE1, activeforeground=TEXT,
         )
-        menu.add_command(label=f"Launch {self.app['name']}", command=lambda: launch_app(self.key, self.winfo_toplevel()))
+        menu.add_command(
+            label=f"Launch {self.app['name']}",
+            command=lambda: launch_app(
+                self.key, self.winfo_toplevel(), self.apps
+            ),
+        )
         menu.add_separator()
         menu.add_command(label="Unpin", command=self._on_unpin)
         try:
@@ -1016,6 +1382,7 @@ class HubApp:
         global UI_FONT, MONO_FONT
         self.root = root
         self.cfg = cfg
+        self.apps = build_app_registry(cfg)
         self.cache = load_cache()
         self.queue: queue.Queue = queue.Queue()
         self.generation = 0
@@ -1024,6 +1391,7 @@ class HubApp:
         self.icons: dict[str, Any] = {}
         self.news_cards: list[NewsCard] = []
         self.last_status = ""
+        self._refresh_job: str | None = None
 
         families = set(tkfont.families(root))
         for candidate in ("Inter", "Noto Sans", "Cantarell", "DejaVu Sans", "Liberation Sans"):
@@ -1076,6 +1444,20 @@ class HubApp:
         self.root.geometry(f"{width}x{height}+{x}+{y}")
         self.root.minsize(min(1180, screen_w - 40), min(760, screen_h - 60))
 
+    def _rebuild_ui(self) -> None:
+        for child in self.root.winfo_children():
+            child.destroy()
+        self.news_cards = []
+        self.weather_extras = None
+        self.cfg = normalize_config(self.cfg)
+        self.apps = build_app_registry(self.cfg)
+        apply_theme(self.cfg.get("theme", "mocha"))
+        self.root.configure(bg=BASE)
+        self._build_header()
+        self._build_content()
+        self._load_cached_into_ui()
+        self.refresh_all()
+
     def _build_header(self) -> None:
         header = tk.Frame(self.root, bg=BASE)
         header.pack(fill="x", padx=36, pady=(22, 6))
@@ -1110,53 +1492,164 @@ class HubApp:
     def _build_content(self) -> None:
         content = tk.Frame(self.root, bg=BASE)
         content.pack(fill="both", expand=True, padx=36, pady=(4, 4))
-        content.columnconfigure(0, weight=0, minsize=356)
-        content.columnconfigure(1, weight=1)
+        content.columnconfigure(0, weight=1)
+        content.columnconfigure(1, weight=0, minsize=356)
         content.rowconfigure(0, weight=1)
 
+        # Left column: news articles and recently opened folders.
         left = tk.Frame(content, bg=BASE)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 18))
-        left.rowconfigure(0, weight=1)
+        left.rowconfigure(1, weight=1)
         left.columnconfigure(0, weight=1)
-        self.weather_card = Card(left, bg=SURFACE0, radius=20, pad=22)
+
+        news_header = tk.Frame(left, bg=BASE)
+        news_header.grid(row=0, column=0, sticky="ew")
+        tk.Label(
+            news_header, text="Latest news", font=ui_font(14, "bold"),
+            fg=TEXT, bg=BASE,
+        ).pack(side="left")
+        self.topic_count_label = tk.Label(
+            news_header, text="", font=ui_font(9), fg=GREEN, bg=BASE,
+        )
+        self.topic_count_label.pack(side="right")
+
+        self.news_scroll = ScrollFrame(left, bg=BASE)
+        self.news_scroll.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        self.news_body = self.news_scroll.body
+        self._build_news_cards()
+
+        self.folders_card = Card(
+            left, bg=SURFACE0, radius=20, pad=16, height=176
+        )
+        self.folders_card.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        self._build_folders(self.folders_card.body)
+
+        # Right column: weather and app shortcuts.
+        right = tk.Frame(content, bg=BASE)
+        right.grid(row=0, column=1, sticky="nsew")
+        right.rowconfigure(0, weight=1)
+        right.columnconfigure(0, weight=1)
+
+        self.weather_card = Card(right, bg=SURFACE0, radius=20, pad=22)
         self.weather_card.grid(row=0, column=0, sticky="nsew")
         self.weather_body = self.weather_card.body
         self.weather_extras: tk.Frame | None = None
         self.weather_card.bind("<Configure>", self._on_weather_resize, add="+")
 
         self.shortcuts_card = Card(
-            left, bg=SURFACE0, radius=20, pad=18, height=272
+            right, bg=SURFACE0, radius=20, pad=18, height=272
         )
         self.shortcuts_card.grid(row=1, column=0, sticky="ew", pady=(12, 0))
         self._build_shortcuts(self.shortcuts_card.body)
 
-        right = tk.Frame(content, bg=BASE)
-        right.grid(row=0, column=1, sticky="nsew")
-        right.rowconfigure(1, weight=1)
-        right.columnconfigure(0, weight=1)
+    def _build_news_cards(self) -> None:
+        for child in self.news_body.winfo_children():
+            child.destroy()
+        self.news_cards = []
+        for index, topic in enumerate(self.cfg["topics"]):
+            accent = TOPIC_COLORS[index % len(TOPIC_COLORS)]
+            card = NewsCard(self.news_body, accent, height=138)
+            card.pack(fill="x", pady=5)
+            card.set_topic(topic, accent)
+            card.show_message(topic, "Loading\u2026")
+            self.news_cards.append(card)
+        self.news_scroll.bind_wheel()
+        if hasattr(self, "topic_count_label"):
+            count = len(self.cfg["topics"])
+            noun = "topic" if count == 1 else "topics"
+            self.topic_count_label.configure(
+                text=f"\u25cf  {count} {noun} \u00b7 last 24 hours"
+            )
 
-        news_header = tk.Frame(right, bg=BASE)
-        news_header.grid(row=0, column=0, sticky="ew")
+    def _build_folders(self, parent: tk.Misc) -> None:
+        header = tk.Frame(parent, bg=SURFACE0)
+        header.pack(fill="x")
         tk.Label(
-            news_header, text="Latest news", font=ui_font(14, "bold"),
-            fg=TEXT, bg=BASE,
+            header, text="Recent folders", font=ui_font(12, "bold"),
+            fg=TEXT, bg=SURFACE0,
         ).pack(side="left")
-        tk.Label(
-            news_header, text="\u25cf  last 24 hours", font=ui_font(9),
-            fg=GREEN, bg=BASE,
+        PillButton(
+            header, "Browse\u2026", self._browse_folder, padx=8, pady=3,
+            font=ui_font(8),
         ).pack(side="right")
 
-        news_grid = tk.Frame(right, bg=BASE)
-        news_grid.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
-        news_grid.columnconfigure(0, weight=1)
-        for index in range(5):
-            news_grid.rowconfigure(index, weight=1, uniform="news")
-            card = NewsCard(news_grid, TOPIC_COLORS[index], height=138)
-            card.grid(row=index, column=0, sticky="new", pady=5)
-            self.news_cards.append(card)
-        for index, topic in enumerate(self.cfg["topics"]):
-            self.news_cards[index].set_topic(topic, TOPIC_COLORS[index])
-            self.news_cards[index].show_message(topic, "Loading\u2026")
+        self.folders_frame = tk.Frame(parent, bg=SURFACE0)
+        self.folders_frame.pack(fill="both", expand=True, pady=(8, 0))
+        self._rebuild_folders()
+
+    def _rebuild_folders(self) -> None:
+        if not hasattr(self, "folders_frame"):
+            return
+        for child in self.folders_frame.winfo_children():
+            child.destroy()
+        folders = recent_folders(self.cache, limit=5)
+        if not folders:
+            tk.Label(
+                self.folders_frame,
+                text="No recent folders yet. Use \u201cBrowse\u2026\u201d to open one.",
+                font=ui_font(9), fg=OVERLAY1, bg=SURFACE0, anchor="w",
+            ).pack(fill="x", pady=4)
+        for folder in folders:
+            path = folder["path"]
+            display = path.replace(str(Path.home()), "~", 1)
+            if len(display) > 34:
+                display = "\u2026" + display[-33:]
+            row = tk.Frame(self.folders_frame, bg=SURFACE0)
+            row.pack(fill="x", pady=1)
+            glyph = tk.Label(
+                row, text="\u25b8", font=ui_font(10, "bold"), fg=PEACH,
+                bg=SURFACE0,
+            )
+            glyph.pack(side="left")
+            name = tk.Label(
+                row, text=folder["name"], font=ui_font(9), fg=SUBTEXT1,
+                bg=SURFACE0, anchor="w",
+            )
+            name.pack(side="left", padx=(4, 8))
+            path_label = tk.Label(
+                row, text=display, font=ui_font(8), fg=OVERLAY1, bg=SURFACE0,
+                anchor="e",
+            )
+            path_label.pack(side="right")
+            for widget in (row, glyph, name, path_label):
+                widget.configure(cursor="hand2")
+                widget.bind(
+                    "<Button-1>", lambda _event, p=path: self._open_folder(p)
+                )
+        rows = max(1, len(folders))
+        self.folders_card.configure(height=max(132, min(250, 82 + rows * 28)))
+
+    def _open_folder(self, path: str) -> None:
+        target = Path(path).expanduser()
+        if not target.is_dir():
+            messagebox.showerror(
+                "Home Hub", f"Folder not found:\n{target}", parent=self.root
+            )
+            return
+        try:
+            subprocess.Popen(
+                ["xdg-open", str(target)],
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+            )
+        except OSError as error:
+            messagebox.showerror(
+                "Home Hub", f"Could not open the folder.\n\n{error}",
+                parent=self.root,
+            )
+            return
+        record_recent_folder(self.cache, str(target))
+        save_cache(self.cache)
+        self._rebuild_folders()
+
+    def _browse_folder(self) -> None:
+        path = filedialog.askdirectory(
+            parent=self.root, initialdir=str(Path.home()), mustexist=True
+        )
+        if path:
+            self._open_folder(path)
 
     def _build_shortcuts(self, parent: tk.Misc) -> None:
         header = tk.Frame(parent, bg=SURFACE0)
@@ -1169,8 +1662,9 @@ class HubApp:
             font=ui_font(9),
         ).pack(side="right")
 
-        self.tiles_frame = tk.Frame(parent, bg=SURFACE0)
-        self.tiles_frame.pack(fill="both", expand=True, pady=(10, 0))
+        self.tiles_scroll = ScrollFrame(parent, bg=SURFACE0)
+        self.tiles_scroll.pack(fill="both", expand=True, pady=(10, 0))
+        self.tiles_frame = self.tiles_scroll.body
         self._rebuild_tiles()
 
     # -- cached data ----------------------------------------------------
@@ -1240,9 +1734,20 @@ class HubApp:
             self.queue.put(("news", generation, topic, None, str(error)))
 
     def _schedule_periodic_refresh(self) -> None:
-        self.root.after(15 * 60 * 1000, self._periodic_refresh)
+        if self._refresh_job is not None:
+            try:
+                self.root.after_cancel(self._refresh_job)
+            except tk.TclError:
+                pass
+        minutes = _clamp_int(
+            (self.cfg.get("weather") or {}).get("refresh_minutes"), 15, 5, 120
+        )
+        self._refresh_job = self.root.after(
+            minutes * 60 * 1000, self._periodic_refresh
+        )
 
     def _periodic_refresh(self) -> None:
+        self._refresh_job = None
         self.refresh_all()
         self._schedule_periodic_refresh()
 
@@ -1321,6 +1826,7 @@ class HubApp:
         self.status_label.configure(
             text=self.last_status, fg=PEACH if self.had_error else OVERLAY0
         )
+        self._rebuild_folders()
 
     def _topic_index(self, topic: str) -> int:
         try:
@@ -1334,7 +1840,7 @@ class HubApp:
         extras = self.weather_extras
         if extras is None or not extras.winfo_exists():
             return
-        if event.height < 500:
+        if event.height < 420:
             if extras.winfo_manager():
                 extras.pack_forget()
         elif not extras.winfo_manager():
@@ -1349,6 +1855,12 @@ class HubApp:
         self.weather_extras = None
         for child in self.weather_body.winfo_children():
             child.destroy()
+        options = self.cfg.get("weather") or {}
+        show_details = bool(options.get("show_details", True))
+        show_hourly = bool(options.get("show_hourly", True))
+        show_sun = bool(options.get("show_sun", True))
+        show_forecast = bool(options.get("show_forecast", True))
+        forecast_days = _clamp_int(options.get("forecast_days"), 5, 1, 7)
 
         if not data:
             wrapper = tk.Frame(self.weather_body, bg=SURFACE0)
@@ -1397,37 +1909,52 @@ class HubApp:
             fg=SUBTEXT1, bg=SURFACE0, anchor="w",
         ).pack(anchor="w")
 
-        stats = tk.Frame(self.weather_body, bg=SURFACE0)
-        stats.pack(fill="x", pady=(16, 0))
-        stats.columnconfigure(0, weight=1)
-        stats.columnconfigure(1, weight=1)
-        stat_values = [
-            ("Feels like", f"{data.get('feels', 0)}\u00b0"),
-            ("Humidity", f"{data.get('humidity', 0)}%"),
-            ("Wind", f"{data.get('wind', 0)} {data.get('wind_unit', '')}"),
-            ("High / Low", f"{data.get('high', 0)}\u00b0 / {data.get('low', 0)}\u00b0"),
-        ]
-        for index, (label, value) in enumerate(stat_values):
-            cell = tk.Frame(stats, bg=SURFACE0)
-            cell.grid(
-                row=index // 2, column=index % 2, sticky="w",
-                padx=(0, 12), pady=(0, 8),
-            )
-            tk.Label(
-                cell, text=label, font=ui_font(9), fg=OVERLAY1, bg=SURFACE0,
-                anchor="w",
-            ).pack(anchor="w")
-            tk.Label(
-                cell, text=value, font=ui_font(12, "bold"), fg=SUBTEXT1,
-                bg=SURFACE0, anchor="w",
-            ).pack(anchor="w")
-
-        extras = tk.Frame(self.weather_body, bg=SURFACE0)
-        self.weather_extras = extras
-        extras.pack(fill="both", expand=True)
+        if show_details:
+            stats = tk.Frame(self.weather_body, bg=SURFACE0)
+            stats.pack(fill="x", pady=(16, 0))
+            stats.columnconfigure(0, weight=1)
+            stats.columnconfigure(1, weight=1)
+            stat_values = [
+                ("Feels like", f"{data.get('feels', 0)}\u00b0"),
+                ("Humidity", f"{data.get('humidity', 0)}%"),
+                ("Wind", f"{data.get('wind', 0)} {data.get('wind_unit', '')}"),
+                ("High / Low", f"{data.get('high', 0)}\u00b0 / {data.get('low', 0)}\u00b0"),
+            ]
+            for index, (label, value) in enumerate(stat_values):
+                cell = tk.Frame(stats, bg=SURFACE0)
+                cell.grid(
+                    row=index // 2, column=index % 2, sticky="w",
+                    padx=(0, 12), pady=(0, 8),
+                )
+                tk.Label(
+                    cell, text=label, font=ui_font(9), fg=OVERLAY1, bg=SURFACE0,
+                    anchor="w",
+                ).pack(anchor="w")
+                tk.Label(
+                    cell, text=value, font=ui_font(12, "bold"), fg=SUBTEXT1,
+                    bg=SURFACE0, anchor="w",
+                ).pack(anchor="w")
 
         hourly = data.get("hourly") or []
-        if hourly:
+        daily = data.get("daily") or []
+        has_sun = bool(data.get("sunrise") or data.get("sunset"))
+        if show_hourly and not hourly:
+            show_hourly = False
+        if show_sun and not has_sun:
+            show_sun = False
+        if show_forecast and not daily:
+            show_forecast = False
+
+        extras: tk.Frame | None = None
+        if show_hourly or show_sun or show_forecast:
+            extras = tk.Frame(self.weather_body, bg=SURFACE0)
+            self.weather_extras = extras
+            extras.pack(fill="both", expand=True)
+
+        if extras is None:
+            return
+
+        if show_hourly and hourly:
             tk.Label(
                 extras, text="Next 12 hours", font=ui_font(9),
                 fg=OVERLAY1, bg=SURFACE0, anchor="w",
@@ -1479,7 +2006,7 @@ class HubApp:
 
             chart.bind("<Configure>", draw_hourly)
 
-        if data.get("sunrise") or data.get("sunset"):
+        if show_sun:
             tk.Frame(extras, bg=SURFACE1, height=1).pack(
                 fill="x", pady=(8, 10)
             )
@@ -1490,12 +2017,11 @@ class HubApp:
                 font=ui_font(9), fg=OVERLAY1, bg=SURFACE0, anchor="w",
             ).pack(fill="x")
 
-        daily = data.get("daily") or []
-        if daily:
+        if show_forecast:
             tk.Frame(extras, bg=SURFACE0).pack(fill="both", expand=True)
             forecast = tk.Frame(extras, bg=SURFACE0)
             forecast.pack(fill="x", pady=(14, 0))
-            for index, day in enumerate(daily[:5]):
+            for index, day in enumerate(daily[:forecast_days]):
                 forecast.columnconfigure(index, weight=1)
                 cell = tk.Frame(forecast, bg=SURFACE0)
                 cell.grid(row=0, column=index, sticky="nsew", padx=(0, 4))
@@ -1541,14 +2067,19 @@ class HubApp:
             return None
 
     def _find_icon(self, name: str) -> str | None:
+        explicit = Path(name).expanduser()
+        if explicit.is_file():
+            return str(explicit)
         home = str(Path.home())
+        suffix = explicit.suffix.lower()
+        icon = name if suffix in {".png", ".jpg", ".jpeg", ".xpm"} else f"{name}.png"
         patterns = [
-            f"{home}/.local/share/icons/*/*/apps/{name}.png",
-            f"/var/lib/flatpak/exports/share/icons/*/*/apps/{name}.png",
-            f"/var/lib/flatpak/appstream/*/*/*/icons/*/{name}.png",
-            f"/usr/share/icons/*/*/apps/{name}.png",
-            f"/usr/share/icons/*/{name}.png",
-            f"/usr/share/pixmaps/{name}.png",
+            f"{home}/.local/share/icons/*/*/apps/{icon}",
+            f"/var/lib/flatpak/exports/share/icons/*/*/apps/{icon}",
+            f"/var/lib/flatpak/appstream/*/*/*/icons/*/{icon}",
+            f"/usr/share/icons/*/*/apps/{icon}",
+            f"/usr/share/icons/*/{icon}",
+            f"/usr/share/pixmaps/{icon}",
         ]
         matches: list[tuple[int, str]] = []
         for pattern in patterns:
@@ -1572,7 +2103,9 @@ class HubApp:
             child.destroy()
         for index in range(3):
             self.tiles_frame.columnconfigure(index, weight=1)
-        pinned = [key for key in APPS if key in (self.cfg.get("pinned") or [])]
+        pinned = [
+            key for key in self.apps if key in (self.cfg.get("pinned") or [])
+        ]
 
         if not pinned:
             self.shortcuts_card.configure(height=150)
@@ -1582,21 +2115,25 @@ class HubApp:
                 font=ui_font(9), fg=OVERLAY1, bg=SURFACE0, wraplength=250,
                 justify="center",
             ).pack(pady=20)
+            self.tiles_scroll.bind_wheel()
             return
 
         for index, key in enumerate(pinned):
-            app = APPS[key]
+            app = self.apps[key]
             icon = self._load_icon(app.get("icon"), size=40)
             tile = AppTile(
                 self.tiles_frame, key, app, icon,
                 on_unpin=lambda k=key: self.set_pin(k, False),
+                apps=self.apps,
             )
             tile.grid(
                 row=index // 3, column=index % 3, padx=2, pady=2,
             )
 
         rows = (len(pinned) + 2) // 3
-        self.shortcuts_card.configure(height=72 + rows * 96 + (rows - 1) * 8)
+        wanted = 72 + rows * 96 + (rows - 1) * 8
+        self.shortcuts_card.configure(height=min(380, wanted))
+        self.tiles_scroll.bind_wheel()
 
     def _show_pin_menu(self, event: tk.Event | None = None) -> None:
         menu = tk.Menu(
@@ -1604,7 +2141,7 @@ class HubApp:
             activebackground=SURFACE1, activeforeground=TEXT,
             selectcolor=SURFACE1,
         )
-        for key, app in APPS.items():
+        for key, app in self.apps.items():
             variable = tk.BooleanVar(value=key in self.cfg["pinned"])
             menu.add_checkbutton(
                 label=app["name"], variable=variable,
@@ -1626,7 +2163,7 @@ class HubApp:
             current.append(key)
         elif not pinned and key in current:
             current.remove(key)
-        self.cfg["pinned"] = [k for k in APPS if k in current]
+        self.cfg["pinned"] = [k for k in self.apps if k in current]
         save_config(self.cfg)
         self._rebuild_tiles()
 
@@ -1637,14 +2174,15 @@ class HubApp:
         window.title("Home Hub settings")
         window.configure(bg=BASE)
         window.transient(self.root)
-        window.resizable(False, False)
+        window.resizable(True, True)
         window.grab_set()
-        width, height = 580, 700
+        width, height = 640, 780
         x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - width) // 2)
         y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - height) // 2)
         window.geometry(f"{width}x{height}+{x}+{y}")
+        window.minsize(560, 560)
 
-        container = tk.Frame(window, bg=BASE, padx=28, pady=22)
+        container = tk.Frame(window, bg=BASE, padx=26, pady=20)
         container.pack(fill="both", expand=True)
 
         tk.Label(
@@ -1652,17 +2190,61 @@ class HubApp:
             anchor="w",
         ).pack(fill="x")
         tk.Label(
-            container, text="Weather, news topics and pinned shortcuts.",
+            container,
+            text="Themes, weather display, news topics, folders and shortcuts.",
             font=ui_font(9), fg=OVERLAY1, bg=BASE, anchor="w",
-        ).pack(fill="x", pady=(2, 14))
+        ).pack(fill="x", pady=(2, 8))
 
-        tk.Label(
-            container, text="Location", font=ui_font(11, "bold"), fg=SUBTEXT1,
-            bg=BASE, anchor="w",
-        ).pack(fill="x")
+        scroll = ScrollFrame(container, bg=BASE)
+        scroll.pack(fill="both", expand=True)
+        form = scroll.body
+
+        def section(text: str, hint: str = "") -> None:
+            tk.Label(
+                form, text=text, font=ui_font(11, "bold"), fg=SUBTEXT1,
+                bg=BASE, anchor="w",
+            ).pack(fill="x", pady=(14, 2))
+            if hint:
+                tk.Label(
+                    form, text=hint, font=ui_font(9), fg=OVERLAY1, bg=BASE,
+                    anchor="w", justify="left",
+                ).pack(fill="x", pady=(0, 3))
+
+        def checkbutton(parent: tk.Misc, text: str, variable: tk.BooleanVar) -> None:
+            tk.Checkbutton(
+                parent, text=text, variable=variable,
+                bg=BASE, fg=SUBTEXT0, activebackground=BASE,
+                activeforeground=TEXT, selectcolor=SURFACE0,
+                highlightthickness=0, bd=0, font=ui_font(10), anchor="w",
+            ).pack(anchor="w", pady=1)
+
+        # -- appearance --------------------------------------------------
+        section("Appearance")
+        theme_key_by_label = {label: key for key, label in THEME_LABELS.items()}
+        theme_var = tk.StringVar(
+            value=THEME_LABELS.get(self.cfg.get("theme", "mocha"), "Catppuccin Mocha")
+        )
+        theme_row = tk.Frame(form, bg=BASE)
+        theme_row.pack(fill="x", pady=(2, 0))
+        theme_menu = tk.OptionMenu(
+            theme_row, theme_var, *theme_key_by_label.keys()
+        )
+        theme_menu.configure(
+            bg=SURFACE0, fg=TEXT, activebackground=SURFACE1,
+            activeforeground=TEXT, highlightthickness=0, bd=0,
+            font=ui_font(10), indicatoron=True, anchor="w", width=26,
+        )
+        theme_menu["menu"].configure(
+            bg=SURFACE0, fg=TEXT, activebackground=SURFACE1,
+            activeforeground=TEXT, font=ui_font(10),
+        )
+        theme_menu.pack(side="left")
+
+        # -- location ----------------------------------------------------
+        section("Location")
         mode_var = tk.StringVar(value=self.cfg["location"].get("mode", "auto"))
-        mode_row = tk.Frame(container, bg=BASE)
-        mode_row.pack(fill="x", pady=(4, 4))
+        mode_row = tk.Frame(form, bg=BASE)
+        mode_row.pack(fill="x", pady=(2, 4))
         for value, label in (("auto", "Auto-detect"), ("manual", "Use this city")):
             tk.Radiobutton(
                 mode_row, text=label, variable=mode_var, value=value,
@@ -1671,17 +2253,64 @@ class HubApp:
                 font=ui_font(10),
             ).pack(side="left", padx=(0, 14))
         city_var = tk.StringVar(value=self.cfg["location"].get("city", ""))
-        city_entry = self._entry(container, city_var)
-        city_entry.pack(fill="x", pady=(0, 10))
+        city_entry = self._entry(form, city_var)
+        city_entry.pack(fill="x", pady=(0, 2))
 
+        # -- weather -----------------------------------------------------
+        section("Weather", "Choose what the weather card shows and how often it refreshes.")
+        weather_cfg = self.cfg.get("weather") or {}
+        weather_vars: dict[str, tk.BooleanVar] = {}
+        for key, label in (
+            ("show_details", "Show feels-like, humidity, wind and high/low"),
+            ("show_hourly", "Show the next 12 hours chart"),
+            ("show_forecast", "Show the daily forecast"),
+            ("show_sun", "Show sunrise and sunset"),
+        ):
+            variable = tk.BooleanVar(value=bool(weather_cfg.get(key, True)))
+            weather_vars[key] = variable
+            checkbutton(form, label, variable)
+
+        spin_row = tk.Frame(form, bg=BASE)
+        spin_row.pack(fill="x", pady=(6, 2))
         tk.Label(
-            container, text="Units", font=ui_font(11, "bold"), fg=SUBTEXT1,
-            bg=BASE, anchor="w",
-        ).pack(fill="x")
+            spin_row, text="Forecast days", font=ui_font(10), fg=SUBTEXT0,
+            bg=BASE, width=18, anchor="w",
+        ).pack(side="left")
+        forecast_var = tk.StringVar(
+            value=str(weather_cfg.get("forecast_days", 5))
+        )
+        tk.Spinbox(
+            spin_row, from_=1, to=7, textvariable=forecast_var, width=5,
+            bg=SURFACE0, fg=TEXT, insertbackground=TEXT, relief="flat", bd=0,
+            highlightthickness=1, highlightbackground=SURFACE1,
+            highlightcolor=BLUE, buttonbackground=SURFACE1,
+            font=ui_font(10),
+        ).pack(side="left")
+
+        refresh_row = tk.Frame(form, bg=BASE)
+        refresh_row.pack(fill="x", pady=(2, 2))
+        tk.Label(
+            refresh_row, text="Refresh every (minutes)", font=ui_font(10),
+            fg=SUBTEXT0, bg=BASE, width=18, anchor="w",
+        ).pack(side="left")
+        refresh_var = tk.StringVar(
+            value=str(weather_cfg.get("refresh_minutes", 15))
+        )
+        tk.Spinbox(
+            refresh_row, from_=5, to=120, increment=5, textvariable=refresh_var,
+            width=5, bg=SURFACE0, fg=TEXT, insertbackground=TEXT, relief="flat",
+            bd=0, highlightthickness=1, highlightbackground=SURFACE1,
+            highlightcolor=BLUE, buttonbackground=SURFACE1, font=ui_font(10),
+        ).pack(side="left")
+
+        section("Units")
         units_var = tk.StringVar(value=self.cfg.get("units", "metric"))
-        units_row = tk.Frame(container, bg=BASE)
-        units_row.pack(fill="x", pady=(4, 10))
-        for value, label in (("metric", "Celsius / km/h"), ("imperial", "Fahrenheit / mph")):
+        units_row = tk.Frame(form, bg=BASE)
+        units_row.pack(fill="x", pady=(2, 0))
+        for value, label in (
+            ("metric", "Celsius / km/h"),
+            ("imperial", "Fahrenheit / mph"),
+        ):
             tk.Radiobutton(
                 units_row, text=label, variable=units_var, value=value,
                 bg=BASE, fg=SUBTEXT0, activebackground=BASE, activeforeground=TEXT,
@@ -1689,52 +2318,230 @@ class HubApp:
                 font=ui_font(10),
             ).pack(side="left", padx=(0, 14))
 
-        tk.Label(
-            container, text="News topics", font=ui_font(11, "bold"), fg=SUBTEXT1,
-            bg=BASE, anchor="w",
-        ).pack(fill="x")
-        tk.Label(
-            container, text="Five different topics; only headlines from the last 24 hours are shown.",
-            font=ui_font(9), fg=OVERLAY1, bg=BASE, anchor="w",
-        ).pack(fill="x", pady=(0, 4))
-        topic_entries: list[tk.Entry] = []
-        for index in range(5):
-            row = tk.Frame(container, bg=BASE)
+        # -- news topics -------------------------------------------------
+        section(
+            "News topics",
+            f"Add up to {MAX_TOPICS} topics. Only headlines from the last 24 hours are shown.",
+        )
+        topics_frame = tk.Frame(form, bg=BASE)
+        topics_frame.pack(fill="x")
+        topic_rows: list[dict[str, Any]] = []
+
+        def renumber_topics() -> None:
+            for index, item in enumerate(topic_rows):
+                item["label"].configure(text=f"{index + 1}.")
+
+        def remove_topic_row(variable: tk.StringVar) -> None:
+            for item in list(topic_rows):
+                if item["var"] is variable:
+                    item["row"].destroy()
+                    topic_rows.remove(item)
+                    break
+            if not topic_rows:
+                add_topic_row()
+            renumber_topics()
+
+        def add_topic_row(value: str = "") -> None:
+            if len(topic_rows) >= MAX_TOPICS:
+                return
+            variable = tk.StringVar(value=value)
+            row = tk.Frame(topics_frame, bg=BASE)
             row.pack(fill="x", pady=2)
-            tk.Label(
-                row, text=f"{index + 1}.", font=ui_font(10), fg=OVERLAY1, bg=BASE,
+            label = tk.Label(
+                row, text="", font=ui_font(10), fg=OVERLAY1, bg=BASE,
                 width=2, anchor="w",
-            ).pack(side="left")
-            variable = tk.StringVar(
-                value=self.cfg["topics"][index] if index < len(self.cfg["topics"]) else ""
             )
+            label.pack(side="left")
             entry = self._entry(row, variable)
             entry.pack(side="left", fill="x", expand=True)
-            topic_entries.append(entry)
+            PillButton(
+                row, "Remove", command=lambda v=variable: remove_topic_row(v),
+                bg=SURFACE1, hover=SURFACE2, padx=8, pady=2, font=ui_font(8),
+            ).pack(side="right", padx=(6, 0))
+            topic_rows.append({"row": row, "var": variable, "label": label})
+            renumber_topics()
+            scroll.bind_wheel()
 
-        tk.Label(
-            container, text="Pinned shortcuts", font=ui_font(11, "bold"),
-            fg=SUBTEXT1, bg=BASE, anchor="w",
-        ).pack(fill="x", pady=(12, 4))
-        pins_frame = tk.Frame(container, bg=BASE)
+        for topic in self.cfg["topics"]:
+            add_topic_row(topic)
+        PillButton(
+            form, "Add topic", command=lambda: add_topic_row(), padx=10, pady=4,
+            font=ui_font(9),
+        ).pack(anchor="w", pady=(5, 0))
+
+        # -- pinned shortcuts -------------------------------------------
+        section("Pinned shortcuts", "Choose which shortcuts appear on the hub.")
+        pins_frame = tk.Frame(form, bg=BASE)
         pins_frame.pack(fill="x")
         pin_vars: dict[str, tk.BooleanVar] = {}
-        for index, (key, app) in enumerate(APPS.items()):
+        for index, (key, app) in enumerate(self.apps.items()):
             variable = tk.BooleanVar(value=key in self.cfg["pinned"])
             pin_vars[key] = variable
             tk.Checkbutton(
                 pins_frame, text=app["name"], variable=variable,
-                bg=BASE, fg=SUBTEXT0, activebackground=BASE, activeforeground=TEXT,
-                selectcolor=SURFACE0, highlightthickness=0, bd=0,
-                font=ui_font(10), anchor="w",
-            ).grid(row=index // 3, column=index % 3, sticky="w", padx=(0, 16), pady=3)
+                bg=BASE, fg=SUBTEXT0, activebackground=BASE,
+                activeforeground=TEXT, selectcolor=SURFACE0,
+                highlightthickness=0, bd=0, font=ui_font(10), anchor="w",
+            ).grid(
+                row=index // 3, column=index % 3, sticky="w",
+                padx=(0, 16), pady=3,
+            )
 
-        tk.Frame(container, bg=BASE).pack(fill="both", expand=True)
+        # -- custom shortcuts -------------------------------------------
+        section(
+            "Custom shortcuts",
+            "Add any application by name and command. New shortcuts are pinned automatically.",
+        )
+        custom_state: list[dict[str, Any]] = [
+            dict(app) for app in self.cfg.get("custom_apps") or []
+        ]
+        custom_list = tk.Frame(form, bg=BASE)
+        custom_list.pack(fill="x")
+
+        def remove_custom(item: dict[str, Any]) -> None:
+            if item in custom_state:
+                custom_state.remove(item)
+            render_custom()
+
+        def render_custom() -> None:
+            for child in custom_list.winfo_children():
+                child.destroy()
+            if not custom_state:
+                tk.Label(
+                    custom_list, text="No custom shortcuts yet.",
+                    font=ui_font(9), fg=OVERLAY1, bg=BASE, anchor="w",
+                ).pack(fill="x", pady=2)
+                scroll.bind_wheel()
+                return
+            for item in custom_state:
+                row = tk.Frame(custom_list, bg=SURFACE0)
+                row.pack(fill="x", pady=2)
+                info = tk.Frame(row, bg=SURFACE0)
+                info.pack(side="left", fill="x", expand=True, padx=8, pady=4)
+                tk.Label(
+                    info, text=item.get("name", ""), font=ui_font(9, "bold"),
+                    fg=TEXT, bg=SURFACE0, anchor="w",
+                ).pack(fill="x")
+                command = " ".join(item.get("launch") or [])
+                if len(command) > 70:
+                    command = command[:69] + "\u2026"
+                tk.Label(
+                    info, text=command, font=ui_font(8), fg=OVERLAY1,
+                    bg=SURFACE0, anchor="w",
+                ).pack(fill="x")
+                PillButton(
+                    row, "Remove", command=lambda entry=item: remove_custom(entry),
+                    bg=SURFACE1, hover=SURFACE2, padx=8, pady=2,
+                    font=ui_font(8),
+                ).pack(side="right", padx=6)
+            scroll.bind_wheel()
+
+        render_custom()
+
+        fields = tk.Frame(form, bg=BASE)
+        fields.pack(fill="x", pady=(6, 0))
+        name_var = tk.StringVar()
+        command_var = tk.StringVar()
+        icon_var = tk.StringVar()
+        terminal_var = tk.BooleanVar(value=False)
+
+        def field(label: str, variable: tk.StringVar) -> tk.Entry:
+            row = tk.Frame(fields, bg=BASE)
+            row.pack(fill="x", pady=2)
+            tk.Label(
+                row, text=label, font=ui_font(10), fg=SUBTEXT0, bg=BASE,
+                width=10, anchor="w",
+            ).pack(side="left")
+            entry = self._entry(row, variable)
+            entry.pack(side="left", fill="x", expand=True)
+            return entry
+
+        field("Name", name_var)
+        field("Command", command_var)
+        field("Icon", icon_var)
+
+        command_help = tk.Frame(fields, bg=BASE)
+        command_help.pack(fill="x", pady=(2, 0))
+        tk.Label(
+            command_help,
+            text="Command may include arguments, e.g. firefox --new-window",
+            font=ui_font(8), fg=OVERLAY1, bg=BASE, anchor="w",
+        ).pack(side="left")
+        PillButton(
+            command_help, "Choose app\u2026", command=lambda: choose_app(),
+            bg=SURFACE1, hover=SURFACE2, padx=8, pady=2, font=ui_font(8),
+        ).pack(side="right")
+        checkbutton(fields, "Run in a terminal", terminal_var)
+
+        def choose_app() -> None:
+            path = filedialog.askopenfilename(
+                parent=window, title="Choose an application",
+                initialdir="/usr/bin",
+            )
+            if not path:
+                return
+            if not name_var.get().strip():
+                name_var.set(Path(path).name)
+            command_var.set(path)
+
+        def add_custom() -> None:
+            name = name_var.get().strip()
+            try:
+                command = shlex.split(command_var.get().strip())
+            except ValueError as error:
+                messagebox.showerror(
+                    "Home Hub", f"Could not parse the command:\n{error}",
+                    parent=window,
+                )
+                return
+            if not name or not command:
+                messagebox.showerror(
+                    "Home Hub", "Enter a name and a command.", parent=window
+                )
+                return
+            taken = {key for key in self.apps}
+            taken.update(str(item.get("key")) for item in custom_state)
+            key = f"custom-{_slugify(name)}"
+            if key in taken:
+                base = key
+                suffix = 2
+                while f"{base}-{suffix}" in taken:
+                    suffix += 1
+                key = f"{base}-{suffix}"
+            custom_state.append(
+                {
+                    "key": key,
+                    "name": name,
+                    "launch": command,
+                    "icon": icon_var.get().strip() or None,
+                    "monogram": name[:2].upper(),
+                    "color": "BLUE",
+                    "terminal": terminal_var.get(),
+                }
+            )
+            name_var.set("")
+            command_var.set("")
+            icon_var.set("")
+            terminal_var.set(False)
+            render_custom()
+
+        PillButton(
+            form, "Add shortcut", command=add_custom, bg=BLUE, hover=LAVENDER,
+            fg=CRUST, padx=12, pady=5, font=ui_font(9),
+        ).pack(anchor="w", pady=(7, 10))
+
+        # -- footer ------------------------------------------------------
+        scroll.bind_wheel()
+        tk.Frame(container, bg=SURFACE1, height=1).pack(fill="x", pady=(8, 10))
         buttons = tk.Frame(container, bg=BASE)
-        buttons.pack(fill="x", pady=(12, 0))
+        buttons.pack(fill="x")
 
         def save() -> None:
-            topics = [entry.get().strip() for entry in topic_entries]
+            topics = [
+                item["var"].get().strip()
+                for item in topic_rows
+                if item["var"].get().strip()
+            ]
             problem = validate_topics(topics)
             if problem:
                 messagebox.showerror("Home Hub", problem, parent=window)
@@ -1742,11 +2549,29 @@ class HubApp:
             city = city_var.get().strip()
             if mode_var.get() == "manual" and not city:
                 messagebox.showerror(
-                    "Home Hub", "Enter a city, or switch to auto-detect.", parent=window
+                    "Home Hub", "Enter a city, or switch to auto-detect.",
+                    parent=window,
                 )
                 return
+
+            old_custom_keys = {
+                app.get("key")
+                for app in self.cfg.get("custom_apps") or []
+                if isinstance(app, dict)
+            }
             self.cfg["topics"] = topics
             self.cfg["units"] = units_var.get()
+            self.cfg["theme"] = theme_key_by_label.get(
+                theme_var.get(), self.cfg.get("theme", "mocha")
+            )
+            self.cfg["weather"] = {
+                "forecast_days": _clamp_int(forecast_var.get(), 5, 1, 7),
+                "refresh_minutes": _clamp_int(refresh_var.get(), 15, 5, 120),
+                "show_details": weather_vars["show_details"].get(),
+                "show_hourly": weather_vars["show_hourly"].get(),
+                "show_forecast": weather_vars["show_forecast"].get(),
+                "show_sun": weather_vars["show_sun"].get(),
+            }
             self.cfg["location"] = {
                 "mode": mode_var.get(),
                 "city": city,
@@ -1754,11 +2579,23 @@ class HubApp:
                 "longitude": None,
                 "label": "",
             }
-            self.cfg["pinned"] = [key for key in APPS if pin_vars[key].get()]
+            self.cfg["custom_apps"] = [dict(item) for item in custom_state]
+
+            pinned = [
+                key for key in self.apps
+                if pin_vars.get(key) is not None and pin_vars[key].get()
+            ]
+            for item in custom_state:
+                key = item.get("key")
+                if key and key not in old_custom_keys and key not in pinned:
+                    pinned.append(key)
+            self.cfg["pinned"] = pinned
+
+            self.cfg = normalize_config(self.cfg)
             save_config(self.cfg)
             window.destroy()
-            self._apply_config_to_ui()
-            self.refresh_all()
+            self._rebuild_ui()
+            self._schedule_periodic_refresh()
 
         PillButton(
             buttons, "Cancel", command=window.destroy, bg=SURFACE1, hover=SURFACE2
@@ -1773,12 +2610,6 @@ class HubApp:
             insertbackground=TEXT, relief="flat", bd=0, highlightthickness=1,
             highlightbackground=SURFACE1, highlightcolor=BLUE,
         )
-
-    def _apply_config_to_ui(self) -> None:
-        for index, topic in enumerate(self.cfg["topics"]):
-            self.news_cards[index].set_topic(topic, TOPIC_COLORS[index])
-            self.news_cards[index].show_message(topic, "Loading\u2026")
-        self._rebuild_tiles()
 
     # -- window ---------------------------------------------------------
 
@@ -1800,6 +2631,7 @@ class HubApp:
 
 def run_gui() -> int:
     cfg = load_config()
+    apply_theme(cfg.get("theme", "mocha"))
     try:
         root = tk.Tk()
     except tk.TclError as error:

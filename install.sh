@@ -25,7 +25,7 @@ cat > "$DESKTOP" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Home Hub
-Comment=Clock, weather, last-24h news and app shortcuts
+Comment=Clock, weather, news, recent folders and app shortcuts
 Exec="$PYTHON" "$DIR/hub.py"
 Icon=home-hub
 Terminal=false

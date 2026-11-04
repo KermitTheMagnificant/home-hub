@@ -1,5 +1,6 @@
 import json
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -135,12 +136,11 @@ class CacheTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
-    def test_normalize_fills_topics_and_dedupes(self):
+    def test_normalize_keeps_custom_topic_count_and_dedupes(self):
         cfg = hub.normalize_config(
             {"topics": ["Tech", "tech", "Science"], "pinned": ["spotify", "bogus", "github"]}
         )
-        self.assertEqual(len(cfg["topics"]), 5)
-        self.assertEqual(len({t.lower() for t in cfg["topics"]}), 5)
+        self.assertEqual(cfg["topics"], ["Tech", "Science"])
         self.assertEqual(cfg["pinned"], ["spotify", "github"])
 
     def test_normalize_missing_keys(self):
@@ -148,17 +148,94 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg["topics"], hub.DEFAULT_TOPICS)
         self.assertEqual(cfg["pinned"], list(hub.APPS))
         self.assertEqual(cfg["units"], "metric")
+        self.assertEqual(cfg["theme"], "mocha")
+        self.assertEqual(cfg["weather"]["forecast_days"], 5)
         self.assertEqual(cfg["location"]["mode"], "auto")
 
     def test_validate_topics(self):
         self.assertIsNone(hub.validate_topics(["A", "B", "C", "D", "E"]))
-        self.assertIsNotNone(hub.validate_topics(["A", "B", "C", "D", ""]))
+        self.assertIsNone(hub.validate_topics(["A", "B", "C", "D", ""]))
+        self.assertIsNotNone(hub.validate_topics([]))
         self.assertIsNotNone(hub.validate_topics(["A", "B", "C", "D", "a"]))
+        self.assertIsNotNone(
+            hub.validate_topics([f"Topic {index}" for index in range(hub.MAX_TOPICS + 1)])
+        )
 
     def test_roundtrip(self):
         cfg = hub.normalize_config({"units": "imperial"})
         self.assertEqual(cfg["units"], "imperial")
         json.dumps(cfg)
+
+    def test_custom_apps_and_pins(self):
+        cfg = hub.normalize_config(
+            {
+                "custom_apps": [
+                    {"name": "Firefox", "command": "firefox --new-window"},
+                    {"name": "Ignored", "command": ""},
+                ],
+                "pinned": ["spotify", "custom-firefox"],
+            }
+        )
+        self.assertEqual(len(cfg["custom_apps"]), 1)
+        custom = cfg["custom_apps"][0]
+        self.assertEqual(custom["key"], "custom-firefox")
+        self.assertEqual(custom["launch"], ["firefox", "--new-window"])
+        self.assertIn("custom-firefox", cfg["pinned"])
+        registry = hub.build_app_registry(cfg)
+        self.assertIn("custom-firefox", registry)
+        self.assertEqual(
+            hub.build_launch_command("custom-firefox", registry)[0],
+            hub.find_executable("firefox") or "firefox",
+        )
+
+    def test_weather_options_are_clamped(self):
+        cfg = hub.normalize_config(
+            {"weather": {"forecast_days": 99, "refresh_minutes": 1}}
+        )
+        self.assertEqual(cfg["weather"]["forecast_days"], 7)
+        self.assertEqual(cfg["weather"]["refresh_minutes"], 5)
+
+
+class ThemeTests(unittest.TestCase):
+    def test_theme_switches_palette(self):
+        try:
+            mocha_base = hub.BASE
+            hub.apply_theme("latte")
+            self.assertNotEqual(hub.BASE, mocha_base)
+            self.assertEqual(hub.THEME, "latte")
+            self.assertEqual(len(hub.TOPIC_COLORS), 8)
+            self.assertEqual(hub.resolve_color("BLUE"), hub.THEMES["latte"]["BLUE"])
+        finally:
+            hub.apply_theme("mocha")
+
+
+class RecentFolderTests(unittest.TestCase):
+    def test_parse_xbel_folders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "Project"
+            folder.mkdir()
+            xbel = f"""<?xml version="1.0" encoding="UTF-8"?>
+<xbel version="1.0" xmlns:mime="http://www.freedesktop.org/standards/shared-mime-info">
+  <bookmark href="{folder.as_uri()}" added="2026-11-02T10:00:00Z">
+    <info><metadata><mime:mime-type type="inode/directory"/></metadata></info>
+  </bookmark>
+  <bookmark href="file:///does/not/exist" added="2026-11-02T11:00:00Z"/>
+</xbel>"""
+            folders = hub.parse_xbel_folders(xbel)
+            self.assertEqual(len(folders), 1)
+            self.assertEqual(folders[0]["path"], str(folder))
+            self.assertEqual(folders[0]["name"], "Project")
+
+    def test_cache_history_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            Path, "home", return_value=Path(tmp)
+        ):
+            cache = {}
+            hub.record_recent_folder(cache, tmp)
+            folders = hub.recent_folders(cache)
+            self.assertEqual(folders[0]["path"], str(Path(tmp)))
+            hub.forget_recent_folder(cache, tmp)
+            self.assertEqual(cache["recent_folders"], [])
 
 
 class WeatherTests(unittest.TestCase):
