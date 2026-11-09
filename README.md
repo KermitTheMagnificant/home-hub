@@ -141,9 +141,15 @@ The installer does not launch the app or change any other settings. It only writ
 - `requests` (already present in most environments)
 - Pillow (optional; used to render real app icons)
 
+Install the Python dependencies with:
+
 ```bash
-python3 -m pip install -r requirements.txt
+./install-dependencies.sh
 ```
+
+The script uses the active `python3` (or the executable in `PYTHON`) and checks
+that Tkinter is available. If you use a virtual environment, activate it first.
+Tkinter is installed through your distribution's package manager, not pip.
 
 If Pillow is missing, shortcuts fall back to colored monograms.
 

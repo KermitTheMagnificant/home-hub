@@ -117,6 +117,27 @@ THEME_LABELS = {
 }
 
 THEME = "mocha"
+BASE = THEMES["mocha"]["BASE"]
+MANTLE = THEMES["mocha"]["MANTLE"]
+CRUST = THEMES["mocha"]["CRUST"]
+SURFACE0 = THEMES["mocha"]["SURFACE0"]
+SURFACE1 = THEMES["mocha"]["SURFACE1"]
+SURFACE2 = THEMES["mocha"]["SURFACE2"]
+OVERLAY0 = THEMES["mocha"]["OVERLAY0"]
+OVERLAY1 = THEMES["mocha"]["OVERLAY1"]
+SUBTEXT0 = THEMES["mocha"]["SUBTEXT0"]
+SUBTEXT1 = THEMES["mocha"]["SUBTEXT1"]
+TEXT = THEMES["mocha"]["TEXT"]
+BLUE = THEMES["mocha"]["BLUE"]
+LAVENDER = THEMES["mocha"]["LAVENDER"]
+MAUVE = THEMES["mocha"]["MAUVE"]
+PINK = THEMES["mocha"]["PINK"]
+RED = THEMES["mocha"]["RED"]
+PEACH = THEMES["mocha"]["PEACH"]
+YELLOW = THEMES["mocha"]["YELLOW"]
+GREEN = THEMES["mocha"]["GREEN"]
+TEAL = THEMES["mocha"]["TEAL"]
+SKY = THEMES["mocha"]["SKY"]
 TOPIC_COLORS: list[str] = []
 
 
