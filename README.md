@@ -137,7 +137,7 @@ The installer does not launch the app or change any other settings. It only writ
 ## Requirements
 
 - Python 3.10+
-- Tkinter (`python3-tk` on Fedora/Debian)
+- Tkinter (`python3-tkinter` on Fedora, `python3-tk` on Debian/Ubuntu, `tk` on Arch)
 - `requests` (already present in most environments)
 - Pillow (optional; used to render real app icons)
 

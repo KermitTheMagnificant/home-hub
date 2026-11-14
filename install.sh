@@ -9,7 +9,7 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 if ! "$PYTHON" -c 'import tkinter' >/dev/null 2>&1; then
-    printf 'Tkinter is required. Install python3-tk (Fedora) or python3-tkinter (Debian/Ubuntu).\n' >&2
+    printf 'Tkinter is required. Install python3-tkinter (Fedora) or python3-tk (Debian/Ubuntu).\n' >&2
     exit 1
 fi
 
