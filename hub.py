@@ -2196,7 +2196,6 @@ class HubApp:
         window.configure(bg=BASE)
         window.transient(self.root)
         window.resizable(True, True)
-        window.grab_set()
         width, height = 640, 780
         x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - width) // 2)
         y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - height) // 2)
@@ -2624,6 +2623,16 @@ class HubApp:
         PillButton(buttons, "Save", command=save, bg=BLUE, hover=LAVENDER, fg=CRUST).pack(
             side="right"
         )
+
+        # Grab only after the form is built and the window is mapped: grabbing an
+        # unmapped Toplevel raises "grab failed: window not viewable" on X11,
+        # which used to abort this method and leave an empty settings window.
+        try:
+            window.wait_visibility()
+            window.grab_set()
+        except tk.TclError:
+            pass  # the modal grab is optional; settings still work without it
+        window.focus_set()
 
     def _entry(self, master: tk.Misc, variable: tk.StringVar) -> tk.Entry:
         return tk.Entry(
